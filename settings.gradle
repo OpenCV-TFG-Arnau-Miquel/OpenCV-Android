@@ -1,0 +1,3 @@
+rootProject.name='AndroidTFG'
+include ':app'
+include ':openCVLibrary345'

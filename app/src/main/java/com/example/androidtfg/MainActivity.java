@@ -133,8 +133,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-
         Mat frame = inputFrame.rgba();
+
+        Core.rotate(frame, frame, 360);
+        Core.flip(frame, frame, 0);
+        Core.flip(frame, frame, 1);
 
         if (netInitialized) {
 
@@ -144,7 +147,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
             tinyYolo.setInput(imageBlob);
 
-            List<Mat> result = new ArrayList<Mat>(2);
+            List<Mat> result = new ArrayList<>(2);
 
             List<String> outBlobNames = getOutputNames(tinyYolo);
 
@@ -216,7 +219,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
                     int intConf = (int) (conf * 100);
 
-                    Imgproc.putText(frame, cocoNames.get(idGuy) + " " + intConf + "%", box.tl(), Core.FONT_HERSHEY_SIMPLEX, 2, new Scalar(255, 255, 0), 2);
+                    Point tl = box.tl().clone();
+                    tl.set( new double[]{tl.x, tl.y - 10});
+
+                    Imgproc.putText(frame, cocoNames.get(idGuy).toUpperCase() + " " + intConf + "%", tl, Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
 
                     Imgproc.rectangle(frame, box.tl(), box.br(), new Scalar(255, 0, 0), 2);
 

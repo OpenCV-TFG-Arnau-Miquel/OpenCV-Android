@@ -2,6 +2,8 @@ package com.example.androidtfg;
 
 import android.content.DialogInterface;
 import android.content.pm.PackageManager;
+import android.hardware.Sensor;
+import android.hardware.SensorManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -51,29 +53,39 @@ import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
+    float confThreshold = 0.3f;
+    float nmsThresh = 0.2f;
+
     private static final String TAG = "MainActivity";
     CameraBridgeViewBase cameraBridgeViewBase;
-    Net tinyYolo;
-    String tinyYoloCfg;
-    String tinyYoloWeights;
+    Net net;
+    String yoloCfg;
+    String yoloWeights;
     private StorageReference mStorageRef;
     private ArrayList<String> cocoNames;
     private boolean netInitialized = false;
 
-    //private ProgressBar progressBar;
+    private SensorManager sensorManager;
+    private Sensor accelerometer;
 
     public static final int REQUEST_ID_MULTIPLE_PERMISSIONS= 3;
+    private AccelerometerListener accelerometerListener;
+
+
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        this.accelerometerListener = new AccelerometerListener();
+        this.sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        this.accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
+
         cameraBridgeViewBase = (JavaCameraView) findViewById(R.id.CameraView);
         cameraBridgeViewBase.setVisibility(SurfaceView.VISIBLE);
         cameraBridgeViewBase.setCvCameraViewListener(this);
-
-        //progressBar = findViewById(R.id.progressBar);
 
         mStorageRef = FirebaseStorage.getInstance().getReference();
 
@@ -95,8 +107,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     @Override
     protected void onResume() {
         Log.d(TAG, "onResume");
-
         super.onResume();
+        sensorManager.registerListener(accelerometerListener, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 
 
     }
@@ -107,9 +119,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         super.onPause();
         if (cameraBridgeViewBase != null) {
-
             cameraBridgeViewBase.disableView();
         }
+        sensorManager.unregisterListener(accelerometerListener);
 
     }
 
@@ -133,105 +145,131 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
+        Log.d(TAG, "FRAME PROCESSING");
+
         Mat frame = inputFrame.rgba();
 
-        Core.rotate(frame, frame, 360);
-        Core.flip(frame, frame, 0);
-        Core.flip(frame, frame, 1);
+        formatFrame(frame);
 
-        if (netInitialized) {
+        if (netInitialized && accelerometerListener.isHighMovement()) {
 
-            Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGBA2RGB);
-
-            Mat imageBlob = Dnn.blobFromImage(frame, 0.00392, new Size(416, 416), new Scalar(0, 0, 0),/*swapRB*/false, /*crop*/false);
-
-            tinyYolo.setInput(imageBlob);
-
-            List<Mat> result = new ArrayList<>(2);
-
-            List<String> outBlobNames = getOutputNames(tinyYolo);
-
-            tinyYolo.forward(result, outBlobNames);
-
-            float confThreshold = 0.3f;
+            // Get all the bounding boxes from the network
+            List<Mat> result = generateResults(frame);
 
             List<Integer> clsIds = new ArrayList<>();
             List<Float> confs = new ArrayList<>();
-            List<Rect> rects = new ArrayList<>();
+            List<Rect> boxes = new ArrayList<>();
 
-            for (int i = 0; i < result.size(); ++i) {
+            detect(frame, result, clsIds, confs, boxes);
 
-                Mat level = result.get(i);
+            addDetections(frame, clsIds, confs, boxes);
+        }
 
-                for (int j = 0; j < level.rows(); ++j) {
-                    Mat row = level.row(j);
-                    Mat scores = row.colRange(5, level.cols());
+        return frame;
+    }
 
-                    Core.MinMaxLocResult mm = Core.minMaxLoc(scores);
+    private void formatFrame(Mat frame) {
+        Core.rotate(frame, frame, 360);
+        Core.flip(frame, frame, 0);
+        Core.flip(frame, frame, 1);
+    }
 
-                    float confidence = (float) mm.maxVal;
+    private List<Mat> generateResults(Mat frame) {
+        Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGBA2RGB);
 
-                    Point classIdPoint = mm.maxLoc;
+        // Generate Binary Object
+        Mat imageBlob = Dnn.blobFromImage(frame, 0.00392, new Size(416, 416), new Scalar(0, 0, 0),/*swapRB*/false, /*crop*/false);
 
-                    if (confidence > confThreshold) {
-                        int centerX = (int) (row.get(0, 0)[0] * frame.cols());
-                        int centerY = (int) (row.get(0, 1)[0] * frame.rows());
-                        int width = (int) (row.get(0, 2)[0] * frame.cols());
-                        int height = (int) (row.get(0, 3)[0] * frame.rows());
+        // Pass the binary image to the network
+        net.setInput(imageBlob);
 
-                        int left = centerX - width / 2;
-                        int top = centerY - height / 2;
+        List<Mat> result = new ArrayList<>();
 
-                        clsIds.add((int) classIdPoint.x);
-                        confs.add(confidence);
+        // Get the names of the layers in the network
+        List<String> outBlobNames = getOutputNames(net);
 
-                        rects.add(new Rect(left, top, width, height));
-                    }
-                }
-            }
-            int ArrayLength = confs.size();
+        // Get the output result of the passed output layers
+        net.forward(result, outBlobNames);
+        return result;
+    }
 
-            if (ArrayLength >= 1) {
-                // Apply non-maximum suppression procedure.
-                float nmsThresh = 0.2f;
+    private void detect(Mat frame, List<Mat> result, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
+        // Scan all bounding boxes
+        for (int i = 0; i < result.size(); ++i) {
 
-                MatOfFloat confidences = new MatOfFloat(Converters.vector_float_to_Mat(confs));
+            Mat level = result.get(i);
 
+            // All detections for current box
+            for (int j = 0; j < level.rows(); ++j) {
+                Mat row = level.row(j);
+                Mat scores = row.colRange(5, level.cols());
 
-                Rect[] boxesArray = rects.toArray(new Rect[0]);
+                // Get value and location of maximum value
+                Core.MinMaxLocResult mm = Core.minMaxLoc(scores);
 
-                MatOfRect boxes = new MatOfRect(boxesArray);
+                float confidence = (float) mm.maxVal;
 
-                MatOfInt indices = new MatOfInt();
+                Point classIdPoint = mm.maxLoc;
 
-                Dnn.NMSBoxes(boxes, confidences, confThreshold, nmsThresh, indices);
+                // Only keep high confidence bounding boxes
+                if (confidence > confThreshold) {
+                    int centerX = (int) (row.get(0, 0)[0] * frame.cols());
+                    int centerY = (int) (row.get(0, 1)[0] * frame.rows());
+                    int width = (int) (row.get(0, 2)[0] * frame.cols());
+                    int height = (int) (row.get(0, 3)[0] * frame.rows());
 
-                // Draw result boxes:
-                int[] ind = indices.toArray();
-                for (int i = 0; i < ind.length; ++i) {
+                    int left = centerX - width / 2;
+                    int top = centerY - height / 2;
 
-                    int idx = ind[i];
-                    Rect box = boxesArray[idx];
+                    clsIds.add((int) classIdPoint.x);
+                    confs.add(confidence);
 
-                    int idGuy = clsIds.get(idx);
-
-                    float conf = confs.get(idx);
-
-                    int intConf = (int) (conf * 100);
-
-                    Point tl = box.tl().clone();
-                    tl.set( new double[]{tl.x, tl.y - 10});
-
-                    Imgproc.putText(frame, cocoNames.get(idGuy).toUpperCase() + " " + intConf + "%", tl, Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
-
-                    Imgproc.rectangle(frame, box.tl(), box.br(), new Scalar(255, 0, 0), 2);
-
+                    boxes.add(new Rect(left, top, width, height));
                 }
             }
         }
+    }
 
+    private void addDetections(Mat frame, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
+        int ArrayLength = confs.size();
+        if (ArrayLength >= 1) {
 
-        return frame;
+            MatOfFloat confidences = new MatOfFloat(Converters.vector_float_to_Mat(confs));
+
+            Rect[] boxesArray = boxes.toArray(new Rect[0]);
+
+            MatOfRect boxesMat = new MatOfRect(boxesArray);
+
+            MatOfInt indices = new MatOfInt();
+
+            // Remove redundant overlapping boxes that have lower confidences
+            Dnn.NMSBoxes(boxesMat, confidences, confThreshold, nmsThresh, indices);
+
+            int[] ind = indices.toArray();
+            for (int i = 0; i < ind.length; ++i) {
+
+                int idx = ind[i];
+                Rect box = boxesArray[idx];
+
+                int id = clsIds.get(idx);
+
+                float conf = confs.get(idx);
+
+                int intConf = (int) (conf * 100);
+
+                Point tl = box.tl().clone();
+                tl.set( new double[]{tl.x, tl.y - 10});
+
+                drawDetections(frame, box, id, intConf, tl);
+
+            }
+        }
+    }
+
+    private void drawDetections(Mat frame, Rect box, int id, int intConf, Point tl) {
+        Imgproc.putText(frame, cocoNames.get(id).toUpperCase() + " " + intConf + "%", tl, Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
+        Imgproc.rectangle(frame, box.tl(), box.br(), new Scalar(255, 0, 0), 2);
+
     }
 
     @Override
@@ -265,7 +303,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                             && perms.get(CAMERA) == PackageManager.PERMISSION_GRANTED
                             && perms.get(READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED) {
                         cameraBridgeViewBase.enableView();
-                        YOLO();
+                        initObjectDetection();
                     } else {
                         if (ActivityCompat.shouldShowRequestPermissionRationale(this, WRITE_EXTERNAL_STORAGE) || ActivityCompat.shouldShowRequestPermissionRationale(this, CAMERA) || ActivityCompat.shouldShowRequestPermissionRationale(this, READ_EXTERNAL_STORAGE)) {
                             showDialogOK("You must accept Camera and Storage Permission as they are required for this app",
@@ -306,7 +344,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
         if (permissions.isEmpty()) {
             cameraBridgeViewBase.enableView();
-            YOLO();
+            initObjectDetection();
         }
     }
 
@@ -319,9 +357,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 .show();
     }
 
-    public void YOLO() {
+    public void initObjectDetection() {
 
-        //this.progressBar.setVisibility(View.VISIBLE);
         if (!netInitialized) {
 
             String path = getApplicationInfo().dataDir;
@@ -340,12 +377,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                             e.printStackTrace();
                         }
                     } else if ("yolov3.cfg".equals(file.getName())) {
-                        this.tinyYoloCfg = file.getPath();
+                        this.yoloCfg = file.getPath();
                     } else {
-                        this.tinyYoloWeights = file.getPath();
+                        this.yoloWeights = file.getPath();
                     }
                 }
-                if (tinyYoloCfg != null && tinyYoloWeights != null && cocoNames != null && !cocoNames.isEmpty()) {
+                if (yoloCfg != null && yoloWeights != null && cocoNames != null && !cocoNames.isEmpty()) {
                     initializeNet();
 
                 } else {
@@ -354,7 +391,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }
             Log.d(TAG, "STARTED FROM CREATE - FIRST TIME");
         }
-        //this.progressBar.setVisibility(View.GONE);
+
     }
 
     private void downloadModelsFromFirebase() {
@@ -396,7 +433,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         namesRef.getFile(localFile)
                 .addOnSuccessListener(taskSnapshot -> {
                     Log.d("CONFIG_DOWNLOAD", "File downloaded");
-                    this.tinyYoloCfg = finalLocalFile.getPath();
+                    this.yoloCfg = finalLocalFile.getPath();
                     downloadWeights();
                 })
                 .addOnFailureListener(exception -> Log.d("CONFIG_DOWNLOAD", "File not downloaded"));
@@ -413,16 +450,16 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         namesRef.getFile(localFile)
                 .addOnSuccessListener(taskSnapshot -> {
                     Log.d("WEIGHTS_DOWNLOAD", "File downloaded");
-                    this.tinyYoloWeights = finalLocalFile.getPath();
+                    this.yoloWeights = finalLocalFile.getPath();
                     initializeNet();
                 })
                 .addOnFailureListener(exception -> Log.d("WEIGHTS_DOWNLOAD", "File not downloaded"));
     }
 
     private void initializeNet() {
-        tinyYolo = Dnn.readNetFromDarknet(tinyYoloCfg, tinyYoloWeights);
+        // Get and initialize the corresponding network from Darknet
+        net = Dnn.readNetFromDarknet(yoloCfg, yoloWeights);
         netInitialized = true;
-        //this.progressBar.setVisibility(View.GONE);
     }
 
     private void loadNamesOfClasses(FileInputStream namesStream) {
@@ -453,6 +490,5 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
         return names;
     }
-
 
 }

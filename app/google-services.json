@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "417622769081",
+    "firebase_url": "https://androidtfg-49050.firebaseio.com",
+    "project_id": "androidtfg-49050",
+    "storage_bucket": "androidtfg-49050.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:417622769081:android:f4a2552c1485fc16d20a68",
+        "android_client_info": {
+          "package_name": "com.example.androidtfg"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "417622769081-q7n797tfflh1gmjknlipji55kmpfu64j.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDlydCdp1pIXp1bZULLMKlGN0yrlljFIUg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "417622769081-q7n797tfflh1gmjknlipji55kmpfu64j.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

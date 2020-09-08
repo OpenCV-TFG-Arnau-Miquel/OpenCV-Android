@@ -131,8 +131,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        Log.d(TAG, "FRAME PROCESSING");
-
         Mat frame = inputFrame.rgba();
 
         formatFrame(frame);

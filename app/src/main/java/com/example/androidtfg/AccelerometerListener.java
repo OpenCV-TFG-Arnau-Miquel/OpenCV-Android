@@ -88,12 +88,12 @@ class AccelerometerListener implements SensorEventListener {
         }
 
         public EventValues calculateValues() {
-            float x1 = -1f;
-            float x2 = 6f;
-            float y1 = -0.5f;
-            float y2 = 4f;
-            float z1 = -2f;
-            float z2 = 2f;
+            float x1 = -0.05f;
+            float x2 = 0.1f;
+            float y1 = -0.3f;
+            float y2 = 0.2f;
+            float z1 = -0.5f;
+            float z2 = 0.05f;
 
             float x = event.values[0];
             xmin = Float.compare(x, x1);

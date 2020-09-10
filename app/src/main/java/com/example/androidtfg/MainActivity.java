@@ -151,7 +151,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         formatFrame(frame);
 
-        if (netInitialized && accelerometerListener.isHighMovement()) {
+        if (netInitialized && !accelerometerListener.isHighMovement()) {
 
             // Get all the bounding boxes from the network
             List<Mat> result = generateResults(frame);

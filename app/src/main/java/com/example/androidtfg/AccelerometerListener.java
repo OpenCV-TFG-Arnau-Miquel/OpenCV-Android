@@ -12,7 +12,6 @@ class AccelerometerListener implements SensorEventListener {
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-        Log.d(TAG, "ACC PROCESSING");
 
         if (event.sensor.getType() == Sensor.TYPE_LINEAR_ACCELERATION) {
             EventValues eventValues = new EventValues(event).calculateValues();
@@ -28,11 +27,13 @@ class AccelerometerListener implements SensorEventListener {
                 (zmin > 0 && zmax < 0)) {
 
                 synchronized (this) {
+                    Log.d(TAG, "NOT HIGH MOVEMENT");
                     this.highMovement = false;
                 }
             } else {
 
                 synchronized (this) {
+                    Log.d(TAG, "IS HIGH MOVEMENT");
                     this.highMovement = true;
                 }
             }
@@ -51,6 +52,13 @@ class AccelerometerListener implements SensorEventListener {
     }
 
     private class EventValues {
+        float x1 = -0.08f;
+        float x2 = 0.3f;
+        float y1 = -0.5f;
+        float y2 = 0.5f;
+        float z1 = -0.8f;
+        float z2 = 0.08f;
+
         private SensorEvent event;
         private int xmin;
         private int xmax;
@@ -88,13 +96,6 @@ class AccelerometerListener implements SensorEventListener {
         }
 
         public EventValues calculateValues() {
-            float x1 = -0.05f;
-            float x2 = 0.1f;
-            float y1 = -0.3f;
-            float y2 = 0.2f;
-            float z1 = -0.5f;
-            float z2 = 0.05f;
-
             float x = event.values[0];
             xmin = Float.compare(x, x1);
             xmax = Float.compare(x, x2);

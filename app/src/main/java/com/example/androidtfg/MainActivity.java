@@ -4,6 +4,7 @@ import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -23,17 +24,10 @@ import org.opencv.android.JavaCameraView;
 import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfFloat;
-import org.opencv.core.MatOfInt;
-import org.opencv.core.MatOfRect;
-import org.opencv.core.Point;
-import org.opencv.core.Rect;
 import org.opencv.core.Scalar;
-import org.opencv.core.Size;
 import org.opencv.dnn.Dnn;
 import org.opencv.dnn.Net;
 import org.opencv.imgproc.Imgproc;
-import org.opencv.utils.Converters;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -53,8 +47,7 @@ import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
-    float confThreshold = 0.3f;
-    float nmsThresh = 0.2f;
+    int IMAGE_DIFF_THRESHOLD = 5;
 
     private static final String TAG = "MainActivity";
     CameraBridgeViewBase cameraBridgeViewBase;
@@ -64,14 +57,17 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private StorageReference mStorageRef;
     private ArrayList<String> cocoNames;
     private boolean netInitialized = false;
+    private ObjectDetectionTask objectDetectionTask;
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
 
-    public static final int REQUEST_ID_MULTIPLE_PERMISSIONS= 3;
+    public static final int REQUEST_ID_MULTIPLE_PERMISSIONS = 3;
     private AccelerometerListener accelerometerListener;
+    private boolean running = false;
+    private Mat oldFrame;
 
-
+    ArrayList<Detection> detectionsDone = new ArrayList<>();
 
 
     @Override
@@ -145,131 +141,91 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     @Override
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
-        Log.d(TAG, "FRAME PROCESSING");
 
-        Mat frame = inputFrame.rgba();
+        Mat newFrame = inputFrame.rgba();
 
-        formatFrame(frame);
+        formatFrame(newFrame);
+
+        /*if (newFrame != null && oldFrame != null) {
+            boolean areSimilarFrames = compareFrames(oldFrame, newFrame);
+            Log.d(TAG, "ARE SIMILAR = " + areSimilarFrames);
+        }
+
+        newFrame.copyTo(oldFrame);*/
+
 
         if (netInitialized && !accelerometerListener.isHighMovement()) {
 
-            // Get all the bounding boxes from the network
-            List<Mat> result = generateResults(frame);
+            Log.d(TAG, "INSIDE DETECTION");
 
-            List<Integer> clsIds = new ArrayList<>();
-            List<Float> confs = new ArrayList<>();
-            List<Rect> boxes = new ArrayList<>();
+            Log.d(TAG, "STATUS: " + objectDetectionTask.getStatus().toString());
+            if (objectDetectionTask.getStatus().equals(AsyncTask.Status.PENDING)) {
+                Log.d(TAG, "TASK EXECUTED");
+                objectDetectionTask.execute(newFrame);
+            } else if (objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
+                objectDetectionTask = new ObjectDetectionTask(net, cocoNames, this);
+                Log.d(TAG, "TASK EXECUTED");
+                objectDetectionTask.execute(newFrame);
+            }
 
-            detect(frame, result, clsIds, confs, boxes);
+            /*if (!areSimilarFrames) {
+                if (running)
+                    objectDetectionTask.cancel(true);
 
-            addDetections(frame, clsIds, confs, boxes);
+                detectionsDone.clear();
+                objectDetectionTask.execute(newFrame);
+                running = true;
+
+            } else {
+                if (mustRedetect()) {
+                    if (running)
+                        objectDetectionTask.cancel(true);
+
+                    objectDetectionTask.execute(newFrame);
+                    running = true;
+                } else {
+                    if (!running) {
+                        objectDetectionTask.execute(newFrame);
+                        running = true;
+                    }
+                }
+            }*/
+
+
+
+        } else if (accelerometerListener.isHighMovement()) {
+            synchronized (this) {
+                detectionsDone.clear();
+                // TODO aturar la tarea de deteccion
+            }
         }
 
-        return frame;
+        synchronized (this) {
+            drawDetections(newFrame);
+        }
+
+        return newFrame;
     }
+
+    private boolean mustRedetect() {
+        return true;
+    }
+
+    private boolean compareFrames(Mat oldFrame, Mat newFrame) {
+        Mat difference = new Mat();
+        Core.absdiff(oldFrame, newFrame, difference);
+        if (Core.countNonZero(difference) <= IMAGE_DIFF_THRESHOLD) {
+            return true;
+        }
+        return false;
+    }
+
+    // TODO: add method to retrieve from Task detected boxes in oldFrame and added it to current frame.
 
     private void formatFrame(Mat frame) {
         Core.rotate(frame, frame, 360);
         Core.flip(frame, frame, 0);
         Core.flip(frame, frame, 1);
-    }
-
-    private List<Mat> generateResults(Mat frame) {
-        Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGBA2RGB);
-
-        // Generate Binary Object
-        Mat imageBlob = Dnn.blobFromImage(frame, 0.00392, new Size(416, 416), new Scalar(0, 0, 0),/*swapRB*/false, /*crop*/false);
-
-        // Pass the binary image to the network
-        net.setInput(imageBlob);
-
-        List<Mat> result = new ArrayList<>();
-
-        // Get the names of the layers in the network
-        List<String> outBlobNames = getOutputNames(net);
-
-        // Get the output result of the passed output layers
-        net.forward(result, outBlobNames);
-        return result;
-    }
-
-    private void detect(Mat frame, List<Mat> result, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
-        // Scan all bounding boxes
-        for (int i = 0; i < result.size(); ++i) {
-
-            Mat level = result.get(i);
-
-            // All detections for current box
-            for (int j = 0; j < level.rows(); ++j) {
-                Mat row = level.row(j);
-                Mat scores = row.colRange(5, level.cols());
-
-                // Get value and location of maximum value
-                Core.MinMaxLocResult mm = Core.minMaxLoc(scores);
-
-                float confidence = (float) mm.maxVal;
-
-                Point classIdPoint = mm.maxLoc;
-
-                // Only keep high confidence bounding boxes
-                if (confidence > confThreshold) {
-                    int centerX = (int) (row.get(0, 0)[0] * frame.cols());
-                    int centerY = (int) (row.get(0, 1)[0] * frame.rows());
-                    int width = (int) (row.get(0, 2)[0] * frame.cols());
-                    int height = (int) (row.get(0, 3)[0] * frame.rows());
-
-                    int left = centerX - width / 2;
-                    int top = centerY - height / 2;
-
-                    clsIds.add((int) classIdPoint.x);
-                    confs.add(confidence);
-
-                    boxes.add(new Rect(left, top, width, height));
-                }
-            }
-        }
-    }
-
-    private void addDetections(Mat frame, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
-        int ArrayLength = confs.size();
-        if (ArrayLength >= 1) {
-
-            MatOfFloat confidences = new MatOfFloat(Converters.vector_float_to_Mat(confs));
-
-            Rect[] boxesArray = boxes.toArray(new Rect[0]);
-
-            MatOfRect boxesMat = new MatOfRect(boxesArray);
-
-            MatOfInt indices = new MatOfInt();
-
-            // Remove redundant overlapping boxes that have lower confidences
-            Dnn.NMSBoxes(boxesMat, confidences, confThreshold, nmsThresh, indices);
-
-            int[] ind = indices.toArray();
-            for (int i = 0; i < ind.length; ++i) {
-
-                int idx = ind[i];
-                Rect box = boxesArray[idx];
-
-                int id = clsIds.get(idx);
-
-                float conf = confs.get(idx);
-
-                int intConf = (int) (conf * 100);
-
-                Point tl = box.tl().clone();
-                tl.set( new double[]{tl.x, tl.y - 10});
-
-                drawDetections(frame, box, id, intConf, tl);
-
-            }
-        }
-    }
-
-    private void drawDetections(Mat frame, Rect box, int id, int intConf, Point tl) {
-        Imgproc.putText(frame, cocoNames.get(id).toUpperCase() + " " + intConf + "%", tl, Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
-        Imgproc.rectangle(frame, box.tl(), box.br(), new Scalar(255, 0, 0), 2);
-
     }
 
     @Override
@@ -327,7 +283,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     private void requestAppPermissions() {
-        List<String> permissions =  new ArrayList<>();
+        List<String> permissions = new ArrayList<>();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             if (checkSelfPermission(CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 permissions.add(CAMERA);
@@ -459,6 +415,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private void initializeNet() {
         // Get and initialize the corresponding network from Darknet
         net = Dnn.readNetFromDarknet(yoloCfg, yoloWeights);
+        objectDetectionTask = new ObjectDetectionTask(net, cocoNames, this);
         netInitialized = true;
     }
 
@@ -478,17 +435,22 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         }
     }
 
-    private static List<String> getOutputNames(Net net) {
-        List<String> names = new ArrayList<>();
-
-        List<Integer> outLayers = net.getUnconnectedOutLayers().toList();
-        List<String> layersNames = net.getLayerNames();
-
-        //unfold and create R-CNN layers from the loaded YOLO model//
-        for (Integer item : outLayers) {
-            names.add(layersNames.get(item - 1));
+    private void drawDetections(Mat newFrame) {
+        if (detectionsDone != null && !detectionsDone.isEmpty()) {
+            for (Detection detection : detectionsDone) {
+                Imgproc.putText(newFrame, cocoNames.get(detection.getId()).toUpperCase() + " " + detection.getIntConf() + "%", detection.getTl(), Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
+                Imgproc.rectangle(newFrame, detection.getBox().tl(), detection.getBox().br(), new Scalar(255, 0, 0), 2);
+            }
         }
-        return names;
+
     }
 
+    public void setNewDetections(ArrayList<Detection> detections) {
+        Log.d(TAG, "ADDED NEW DETECTIONS TO ARRAY");
+
+        synchronized (this) {
+            detectionsDone.clear();
+            this.detectionsDone.addAll(detections);
+        }
+    }
 }

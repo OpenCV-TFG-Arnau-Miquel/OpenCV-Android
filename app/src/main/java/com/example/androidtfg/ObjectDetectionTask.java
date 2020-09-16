@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.List;
 
 class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
-    private static final String TAG = "ObjectDetectionTask";
 
     float confThreshold = 0.3f;
     float nmsThresh = 0.2f;
@@ -29,17 +28,13 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
     private Net net;
     private final MainActivity listener;
 
-    private ArrayList<String> cocoNames;
-
-    public ObjectDetectionTask(Net net, ArrayList<String> cocoNames, MainActivity listener) {
-        this.cocoNames = cocoNames;
+    public ObjectDetectionTask(Net net, MainActivity listener) {
         this.net = net;
         this.listener = listener;
     }
 
     @Override
     protected Object doInBackground(Mat... frames) {
-        Log.d(TAG, "START DETECTION - BACKGROUND");
         Mat frame = frames[0];
 
         // Get all the bounding boxes from the network
@@ -57,7 +52,6 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
     }
 
     private List<Mat> generateResults(Mat frame) {
-        Log.d(TAG, "GENERATE RESULTS - BACKGROUND");
 
 
         Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGBA2RGB);
@@ -79,7 +73,6 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
     }
 
     private void detect(Mat frame, List<Mat> result, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
-        Log.d(TAG, "DETECT - BACKGROUND");
 
 
         // Scan all bounding boxes
@@ -119,7 +112,6 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
     }
 
     private void addDetections(List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
-        Log.d(TAG, "ADD DETECTIONS - BACKGROUND");
 
 
         int ArrayLength = confs.size();
@@ -152,8 +144,8 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
                 Point tl = box.tl().clone();
                 tl.set( new double[]{tl.x, tl.y - 10});
 
-                Log.d(TAG, "Object detected -> " + cocoNames.get(id).toUpperCase() + " " + intConf + "%");
-                detections.add(new Detection(box, id, intConf, tl));
+                if (intConf > 50)
+                    detections.add(new Detection(box, id, intConf, tl));
 
             }
 

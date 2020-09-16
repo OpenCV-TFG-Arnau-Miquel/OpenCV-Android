@@ -6,7 +6,6 @@ import android.hardware.SensorEventListener;
 import android.util.Log;
 
 class AccelerometerListener implements SensorEventListener {
-    private static final String TAG = "AccelerometerListener";
 
     private boolean highMovement = false;
 
@@ -27,13 +26,11 @@ class AccelerometerListener implements SensorEventListener {
                 (zmin > 0 && zmax < 0)) {
 
                 synchronized (this) {
-                    Log.d(TAG, "NOT HIGH MOVEMENT");
                     this.highMovement = false;
                 }
             } else {
 
                 synchronized (this) {
-                    Log.d(TAG, "IS HIGH MOVEMENT");
                     this.highMovement = true;
                 }
             }

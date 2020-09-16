@@ -47,13 +47,13 @@ import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
-    int IMAGE_DIFF_THRESHOLD = 5;
+    private int IMAGE_DIFF_THRESHOLD = 5;
 
     private static final String TAG = "MainActivity";
-    CameraBridgeViewBase cameraBridgeViewBase;
-    Net net;
-    String yoloCfg;
-    String yoloWeights;
+    private CameraBridgeViewBase cameraBridgeViewBase;
+    private Net net;
+    private String yoloCfg;
+    private String yoloWeights;
     private StorageReference mStorageRef;
     private ArrayList<String> cocoNames;
     private boolean netInitialized = false;
@@ -67,7 +67,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private boolean running = false;
     private Mat oldFrame;
 
-    ArrayList<Detection> detectionsDone = new ArrayList<>();
+    private ArrayList<Detection> detectionsDone = new ArrayList<>();
+
+    private int frameCounter = 0;
 
 
     @Override
@@ -88,6 +90,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         if (!OpenCVLoader.initDebug()) {
             Toast.makeText(getApplicationContext(), "There's a problem", Toast.LENGTH_SHORT).show();
         }
+
+        oldFrame = new Mat();
 
     }
 
@@ -143,30 +147,27 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     public Mat onCameraFrame(CameraBridgeViewBase.CvCameraViewFrame inputFrame) {
 
         Mat newFrame = inputFrame.rgba();
+        Mat greyNewFrame = inputFrame.gray();
 
         formatFrame(newFrame);
+        formatFrame(greyNewFrame);
 
-        /*if (newFrame != null && oldFrame != null) {
-            boolean areSimilarFrames = compareFrames(oldFrame, newFrame);
-            Log.d(TAG, "ARE SIMILAR = " + areSimilarFrames);
-        }
+        if (frameCounter > 30) {
 
-        newFrame.copyTo(oldFrame);*/
-
-
-        if (netInitialized && !accelerometerListener.isHighMovement()) {
-
-            Log.d(TAG, "INSIDE DETECTION");
-
-            Log.d(TAG, "STATUS: " + objectDetectionTask.getStatus().toString());
-            if (objectDetectionTask.getStatus().equals(AsyncTask.Status.PENDING)) {
-                Log.d(TAG, "TASK EXECUTED");
-                objectDetectionTask.execute(newFrame);
-            } else if (objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
-                objectDetectionTask = new ObjectDetectionTask(net, cocoNames, this);
-                Log.d(TAG, "TASK EXECUTED");
-                objectDetectionTask.execute(newFrame);
+            if (newFrame != null && !oldFrame.empty()) {
+                boolean areSimilarFrames = compareFrames(oldFrame, greyNewFrame);
+                Log.d(TAG, "ARE SIMILAR = " + areSimilarFrames);
             }
+
+            greyNewFrame.copyTo(oldFrame);
+
+
+            if (netInitialized && !accelerometerListener.isHighMovement()) {
+
+                if (objectDetectionTask == null || objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
+                    objectDetectionTask = new ObjectDetectionTask(net, this);
+                    objectDetectionTask.execute(newFrame);
+                }
 
             /*if (!areSimilarFrames) {
                 if (running)
@@ -192,16 +193,19 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             }*/
 
 
-
-        } else if (accelerometerListener.isHighMovement()) {
-            synchronized (this) {
-                detectionsDone.clear();
-                // TODO aturar la tarea de deteccion
+            } else if (accelerometerListener.isHighMovement()) {
+                synchronized (this) {
+                    detectionsDone.clear();
+                    // TODO aturar la tarea de deteccion
+                }
             }
-        }
 
-        synchronized (this) {
-            drawDetections(newFrame);
+            synchronized (this) {
+                drawDetections(newFrame);
+            }
+
+        } else {
+            frameCounter++;
         }
 
         return newFrame;
@@ -213,8 +217,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private boolean compareFrames(Mat oldFrame, Mat newFrame) {
         Mat difference = new Mat();
-        Core.absdiff(oldFrame, newFrame, difference);
-        if (Core.countNonZero(difference) <= IMAGE_DIFF_THRESHOLD) {
+        Core.compare(oldFrame, newFrame, difference, Core.CMP_EQ);
+        int count = Core.countNonZero(difference);
+        if (count >= 15000) {
             return true;
         }
         return false;
@@ -415,7 +420,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private void initializeNet() {
         // Get and initialize the corresponding network from Darknet
         net = Dnn.readNetFromDarknet(yoloCfg, yoloWeights);
-        objectDetectionTask = new ObjectDetectionTask(net, cocoNames, this);
         netInitialized = true;
     }
 
@@ -442,12 +446,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 Imgproc.rectangle(newFrame, detection.getBox().tl(), detection.getBox().br(), new Scalar(255, 0, 0), 2);
             }
         }
-
     }
 
     public void setNewDetections(ArrayList<Detection> detections) {
-        Log.d(TAG, "ADDED NEW DETECTIONS TO ARRAY");
-
         synchronized (this) {
             detectionsDone.clear();
             this.detectionsDone.addAll(detections);

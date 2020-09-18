@@ -4,7 +4,6 @@ import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
-import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -154,8 +153,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
         if (frameCounter > 30) {
 
+            boolean areSimilarFrames = false;
             if (newFrame != null && !oldFrame.empty()) {
-                boolean areSimilarFrames = compareFrames(oldFrame, greyNewFrame);
+                //TODO: light control
+                areSimilarFrames = compareFrames(oldFrame, greyNewFrame);
                 Log.d(TAG, "ARE SIMILAR = " + areSimilarFrames);
             }
 
@@ -164,39 +165,28 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
             if (netInitialized && !accelerometerListener.isHighMovement()) {
 
-                if (objectDetectionTask == null || objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
-                    objectDetectionTask = new ObjectDetectionTask(net, this);
-                    objectDetectionTask.execute(newFrame);
-                }
+                if (!areSimilarFrames) {
+                    newTask(newFrame);
 
-            /*if (!areSimilarFrames) {
-                if (running)
-                    objectDetectionTask.cancel(true);
-
-                detectionsDone.clear();
-                objectDetectionTask.execute(newFrame);
-                running = true;
-
-            } else {
-                if (mustRedetect()) {
-                    if (running)
-                        objectDetectionTask.cancel(true);
-
-                    objectDetectionTask.execute(newFrame);
-                    running = true;
                 } else {
-                    if (!running) {
-                        objectDetectionTask.execute(newFrame);
-                        running = true;
+                    if (!mustDetect()) {
+                        if (detectionsDone.isEmpty() && !running) {
+                            initTask(newFrame);
+                        }
+                    } else {
+                        Log.d(TAG, "MUST DETECT");
+                        newTask(newFrame);
                     }
                 }
-            }*/
 
 
             } else if (accelerometerListener.isHighMovement()) {
                 synchronized (this) {
                     detectionsDone.clear();
-                    // TODO aturar la tarea de deteccion
+                    if (running) {
+                        objectDetectionTask.cancel(true);
+                        running = false;
+                    }
                 }
             }
 
@@ -211,7 +201,21 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         return newFrame;
     }
 
-    private boolean mustRedetect() {
+    private void newTask(Mat newFrame) {
+        if (running)
+            objectDetectionTask.cancel(true);
+
+        initTask(newFrame);
+    }
+
+    private void initTask(Mat newFrame) {
+        objectDetectionTask = new ObjectDetectionTask(net, this);
+        objectDetectionTask.execute(newFrame);
+        running = true;
+    }
+
+    private boolean mustDetect() {
+        //TODO
         return true;
     }
 

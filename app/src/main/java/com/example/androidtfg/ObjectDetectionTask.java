@@ -35,6 +35,8 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
     @Override
     protected Object doInBackground(Mat... frames) {
+        Log.d("ObjectDetectionTask", "TASK EXECUTED IN BACKGROUND");
+
         Mat frame = frames[0];
 
         // Get all the bounding boxes from the network

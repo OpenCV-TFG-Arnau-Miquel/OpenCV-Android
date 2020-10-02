@@ -22,11 +22,11 @@ public class BrightnessListener implements SensorEventListener {
         //No esta testejat falta establir varems 
         if (event.sensor.getType() == Sensor.TYPE_LIGHT) {
             if (event.values[0] <= 0.0f) {
-                setLight(Brightness.DARK);
+                setLightState(Brightness.DARK);
             } else if (event.values[0] <= 1000.0f) {
-                setLight(Brightness.MID);
+                setLightState(Brightness.MID);
             } else if (event.values[0] > 1000.0f) {
-                setLight(Brightness.LIGHT);
+                setLightState(Brightness.LIGHT);
             }
         }
     }
@@ -36,9 +36,17 @@ public class BrightnessListener implements SensorEventListener {
 
     }
 
-    public void setLight(Brightness brightness) {
+    public Brightness getLightState() {
+        return lightState;
+    }
+
+    public void setLightState(Brightness lightState) {
         synchronized (this) {
-            lightState = brightness;
+            lightState = lightState;
         }
+    }
+
+    public boolean isDark() {
+        return getLightState().equals(Brightness.DARK);
     }
 }

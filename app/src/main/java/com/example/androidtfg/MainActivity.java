@@ -60,9 +60,11 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
     private SensorManager sensorManager;
     private Sensor accelerometer;
+    private Sensor brightness;
 
     public static final int REQUEST_ID_MULTIPLE_PERMISSIONS = 3;
     private AccelerometerListener accelerometerListener;
+    private BrightnessListener brightnessListener;
     private boolean running = false;
     private Mat oldFrame;
 
@@ -76,9 +78,15 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        this.accelerometerListener = new AccelerometerListener();
         this.sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+
+        //Accelerometer listener
+        this.accelerometerListener = new AccelerometerListener();
         this.accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
+
+        //Light listener
+        this.brightnessListener = new BrightnessListener();
+        this.brightness = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
 
         cameraBridgeViewBase = (JavaCameraView) findViewById(R.id.CameraView);
         cameraBridgeViewBase.setVisibility(SurfaceView.VISIBLE);
@@ -162,25 +170,28 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
             greyNewFrame.copyTo(oldFrame);
 
+            if (brightnessListener.isDark()) {
+                //Si es dark no facis res
+            } else {
+                if (netInitialized && !accelerometerListener.isHighMovement()) {
 
-            if (netInitialized && !accelerometerListener.isHighMovement()) {
-
-                if (!areSimilarFrames) {
-                    newTask(newFrame);
-
-                } else {
-                    if (!mustDetect()) {
-                        if (detectionsDone.isEmpty() && !running) {
-                            initTask(newFrame);
-                        }
-                    } else {
-                        Log.d(TAG, "MUST DETECT");
+                    if (!areSimilarFrames) {
                         newTask(newFrame);
+
+                    } else {
+                        if (!mustDetect()) {
+                            if (detectionsDone.isEmpty() && !running) {
+                                initTask(newFrame);
+                            }
+                        } else {
+                            Log.d(TAG, "MUST DETECT");
+                            newTask(newFrame);
+                        }
                     }
+
+
+                } else if (accelerometerListener.isHighMovement()) {
                 }
-
-
-            } else if (accelerometerListener.isHighMovement()) {
                 synchronized (this) {
                     detectionsDone.clear();
                     if (running) {

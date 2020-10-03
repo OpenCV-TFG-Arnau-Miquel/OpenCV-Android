@@ -13,6 +13,8 @@ public class BrightnessListener implements SensorEventListener {
     }
 
     private Brightness lightState;
+    private Brightness oldLightState;
+    public boolean notableChange;
 
     @Override
     public void onSensorChanged(SensorEvent event) {
@@ -36,17 +38,37 @@ public class BrightnessListener implements SensorEventListener {
 
     }
 
-    public Brightness getLightState() {
-        return lightState;
-    }
-
     public void setLightState(Brightness lightState) {
         synchronized (this) {
-            lightState = lightState;
+            oldLightState = this.lightState;
+            this.lightState = lightState;
+            changeLight();
         }
     }
 
-    public boolean isDark() {
-        return getLightState().equals(Brightness.DARK);
+    public void changeLight() {
+        if (isDark(this.oldLightState) && isLight(this.lightState)) {
+            notableChange(true);
+        } else if (isLight(this.oldLightState) && isDark(this.lightState)){
+            notableChange(true);
+        } else {
+            notableChange(false);
+        }
+    }
+
+    public void notableChange(boolean change) {
+        this.notableChange = change;
+    }
+
+    public boolean isNotableChange() {
+        return notableChange;
+    }
+
+    public boolean isLight(Brightness light) {
+        return light.equals(Brightness.LIGHT);
+    }
+
+    public boolean isDark(Brightness light) {
+        return light.equals(Brightness.DARK);
     }
 }

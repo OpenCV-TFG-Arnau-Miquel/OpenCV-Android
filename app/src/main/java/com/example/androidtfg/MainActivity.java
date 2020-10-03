@@ -84,9 +84,12 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         this.accelerometerListener = new AccelerometerListener();
         this.accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
 
-        //Light listener
-        this.brightnessListener = new BrightnessListener();
-        this.brightness = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
+        /** Light listener
+         * No s'aplica aquest sensor per falta de temps per aplicar-ho i
+         * falta de coneixement especific dels varems que haurien de aplicar-se.
+         */
+//        this.brightnessListener = new BrightnessListener();
+//        this.brightness = sensorManager.getDefaultSensor(Sensor.TYPE_LIGHT);
 
         cameraBridgeViewBase = (JavaCameraView) findViewById(R.id.CameraView);
         cameraBridgeViewBase.setVisibility(SurfaceView.VISIBLE);
@@ -170,36 +173,37 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
             greyNewFrame.copyTo(oldFrame);
 
-            if (brightnessListener.isDark()) {
-                //Si es dark no facis res
-            } else {
-                if (netInitialized && !accelerometerListener.isHighMovement()) {
 
-                    if (!areSimilarFrames) {
-                        newTask(newFrame);
+            if (netInitialized && !accelerometerListener.isHighMovement()) {
 
-                    } else {
-                        if (!mustDetect()) {
-                            if (detectionsDone.isEmpty() && !running) {
-                                initTask(newFrame);
-                            }
-                        } else {
-                            Log.d(TAG, "MUST DETECT");
-                            newTask(newFrame);
+                if (!areSimilarFrames) {
+                    //son diferents
+                    newTask(newFrame);
+
+                } else {
+                    //son iguals
+                    if (!mustDetect()) {
+                        if (detectionsDone.isEmpty() && !running) {
+                            initTask(newFrame);
                         }
+                    } else {
+                        Log.d(TAG, "MUST DETECT");
+                        newTask(newFrame);
                     }
-
-
-                } else if (accelerometerListener.isHighMovement()) {
                 }
-                synchronized (this) {
-                    detectionsDone.clear();
-                    if (running) {
-                        objectDetectionTask.cancel(true);
-                        running = false;
-                    }
+
+
+            } else if (accelerometerListener.isHighMovement()) {
+                //
+            }
+            synchronized (this) {
+                detectionsDone.clear();
+                if (running) {
+                    objectDetectionTask.cancel(true);
+                    running = false;
                 }
             }
+
 
             synchronized (this) {
                 drawDetections(newFrame);

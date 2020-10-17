@@ -22,7 +22,7 @@ import java.util.List;
 
 class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
-    float confThreshold = 0.3f;
+    float confThreshold = 0.5f;
     float nmsThresh = 0.2f;
 
     private Net net;
@@ -40,22 +40,22 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
         Mat frame = frames[0];
 
         // Get all the bounding boxes from the network
-        List<Mat> result = generateResults(frame);
+        List<Mat> result = detect(frame);
 
         List<Integer> clsIds = new ArrayList<>();
         List<Float> confs = new ArrayList<>();
         List<Rect> boxes = new ArrayList<>();
 
-        detect(frame, result, clsIds, confs, boxes);
+        processDetections(frame, result, clsIds, confs, boxes);
 
-        addDetections(clsIds, confs, boxes);
+        filterDetections(clsIds, confs, boxes);
 
         Log.d("ObjectDetectionTask", "I'VE FINISHED");
 
         return  null;
     }
 
-    private List<Mat> generateResults(Mat frame) {
+    private List<Mat> detect(Mat frame) {
 
 
         Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGBA2RGB);
@@ -79,7 +79,7 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
         return result;
     }
 
-    private void detect(Mat frame, List<Mat> result, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
+    private void processDetections(Mat frame, List<Mat> result, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
 
 
         // Scan all layers output
@@ -121,7 +121,7 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
         }
     }
 
-    private void addDetections(List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
+    private void filterDetections(List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
 
 
         int ArrayLength = confs.size();
@@ -133,14 +133,14 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
             MatOfRect boxesMat = new MatOfRect(boxesArray);
 
-            MatOfInt indices = new MatOfInt();
+            MatOfInt indices = new MatOfInt();  // it will save the new mapping of the previous detections when filtered
 
-            // Remove redundant overlapping boxes that have lower confidences
+            // Remove redundant overlapping boxes that have lower confidences - filter boxes
             Dnn.NMSBoxes(boxesMat, confidences, confThreshold, nmsThresh, indices);
 
             int[] ind = indices.toArray();
             ArrayList<Detection> detections = new ArrayList<>();
-            for (int i = 0; i < ind.length; ++i) {
+            for (int i = 0; i < ind.length; ++i) {  // save the remaining boxes
 
                 int idx = ind[i];
                 Rect box = boxesArray[idx];
@@ -149,17 +149,16 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
                 float conf = confs.get(idx);
 
-                int intConf = (int) (conf * 100);
+                int intConf = (int) (conf * 100); // get value in hundred per cent units
 
-                Point tl = box.tl().clone();
-                tl.set( new double[]{tl.x, tl.y - 10});
+                Point textPosition = box.tl().clone();
+                textPosition.set( new double[]{textPosition.x, textPosition.y - 10}); // move text a little bit upper
 
-                if (intConf > 50)
-                    detections.add(new Detection(box, id, intConf, tl));
+                detections.add(new Detection(box, id, intConf, textPosition)); // save to the array that will be passed to mainActivity
 
             }
 
-            listener.setNewDetections(detections);
+            listener.setNewDetections(detections);  //pass the array of detections to the mainActivity
 
         }
 
@@ -171,7 +170,7 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
         List<Integer> outLayers = net.getUnconnectedOutLayers().toList();
         List<String> layersNames = net.getLayerNames();
 
-        //unfold and create R-CNN layers from the loaded YOLO model//
+        // unfold and create R-CNN layers from the loaded YOLO model
         for (Integer item : outLayers) {
             names.add(layersNames.get(item - 1));
         }

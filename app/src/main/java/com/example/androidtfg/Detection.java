@@ -7,13 +7,13 @@ class Detection {
     private Rect box;
     private int id;
     private int intConf;
-    private Point tl;
+    private Point textPosition;
 
-    public Detection(Rect box, int id, int intConf, Point tl) {
+    public Detection(Rect box, int id, int intConf, Point textPosition) {
         this.box = box;
         this.id = id;
         this.intConf = intConf;
-        this.tl = tl;
+        this.textPosition = textPosition;
     }
 
     public Rect getBox() {
@@ -28,7 +28,7 @@ class Detection {
         return intConf;
     }
 
-    public Point getTl() {
-        return tl;
+    public Point getTextPosition() {
+        return textPosition;
     }
 }

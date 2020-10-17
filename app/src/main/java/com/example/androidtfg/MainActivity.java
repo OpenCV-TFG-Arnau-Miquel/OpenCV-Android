@@ -478,7 +478,7 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private void drawDetections(Mat newFrame) {
         if (detectionsDone != null && !detectionsDone.isEmpty()) {
             for (Detection detection : detectionsDone) {
-                Imgproc.putText(newFrame, cocoNames.get(detection.getId()).toUpperCase() + " " + detection.getIntConf() + "%", detection.getTl(), Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
+                Imgproc.putText(newFrame, cocoNames.get(detection.getId()).toUpperCase() + " " + detection.getIntConf() + "%", detection.getTextPosition(), Core.FONT_HERSHEY_COMPLEX, 0.75, new Scalar(255, 255, 0), 1);
                 Imgproc.rectangle(newFrame, detection.getBox().tl(), detection.getBox().br(), new Scalar(255, 0, 0), 2);
             }
         }

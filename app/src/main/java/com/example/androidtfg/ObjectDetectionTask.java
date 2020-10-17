@@ -50,6 +50,8 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
         addDetections(clsIds, confs, boxes);
 
+        Log.d("ObjectDetectionTask", "I'VE FINISHED");
+
         return  null;
     }
 
@@ -58,7 +60,8 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
         Imgproc.cvtColor(frame, frame, Imgproc.COLOR_RGBA2RGB);
 
-        // Generate Binary Object
+        // Generate a 4-dimensional Binary Object from image, after mean subtraction, normalizing, and channel swapping.
+        // 4-dimensions: num_images, num_channels (colors), width, height.
         Mat imageBlob = Dnn.blobFromImage(frame, 0.00392, new Size(416, 416), new Scalar(0, 0, 0),/*swapRB*/false, /*crop*/false);
 
         // Pass the binary image to the network
@@ -69,7 +72,9 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
         // Get the names of the layers in the network
         List<String> outBlobNames = getOutputNames(net);
 
-        // Get the output result of the passed output layers
+        // Runs forward pass to get the output result of the passed output layers
+        // The result is a set of 4-dimensional Binary Objects, corresponding to each layer output
+        // in this case we pass 3 layers, so 3 results.
         net.forward(result, outBlobNames);
         return result;
     }
@@ -77,37 +82,40 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
     private void detect(Mat frame, List<Mat> result, List<Integer> clsIds, List<Float> confs, List<Rect> boxes) {
 
 
-        // Scan all bounding boxes
+        // Scan all layers output
         for (int i = 0; i < result.size(); ++i) {
 
-            Mat level = result.get(i);
+            Mat level = result.get(i); // a level is a layer output
 
-            // All detections for current box
+            // See all detections for each layer
             for (int j = 0; j < level.rows(); ++j) {
-                Mat row = level.row(j);
-                Mat scores = row.colRange(5, level.cols());
 
-                // Get value and location of maximum value
-                Core.MinMaxLocResult mm = Core.minMaxLoc(scores);
+                Mat row = level.row(j); // row in a level is a detection
 
-                float confidence = (float) mm.maxVal;
-
-                Point classIdPoint = mm.maxLoc;
+                Mat scores = row.colRange(5, level.cols()); // information about class predictions
+                Core.MinMaxLocResult mm = Core.minMaxLoc(scores); // Get values and locations of possible classes
+                float confidence = (float) mm.maxVal; // max probability of class
+                Point classIdPoint = mm.maxLoc; // position of the class in the set
 
                 // Only keep high confidence bounding boxes
                 if (confidence > confThreshold) {
+                    // get data of the bounding box in relation to the main frame
+                    // center of the box
+                    // width and height
+                    // values are divisors (0.5, 0.65...)
                     int centerX = (int) (row.get(0, 0)[0] * frame.cols());
                     int centerY = (int) (row.get(0, 1)[0] * frame.rows());
                     int width = (int) (row.get(0, 2)[0] * frame.cols());
                     int height = (int) (row.get(0, 3)[0] * frame.rows());
 
+                    // get start points of the bounding box in the frame
                     int left = centerX - width / 2;
                     int top = centerY - height / 2;
 
-                    clsIds.add((int) classIdPoint.x);
-                    confs.add(confidence);
+                    clsIds.add((int) classIdPoint.x);   // x is the position needed to get the class name form the array
+                    confs.add(confidence);  // confidence will be in same place in array than the corresponding class in the array above
 
-                    boxes.add(new Rect(left, top, width, height));
+                    boxes.add(new Rect(left, top, width, height));  // save this box: start position in frame + sizes
                 }
             }
         }
@@ -168,6 +176,12 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
             names.add(layersNames.get(item - 1));
         }
         return names;
+    }
+
+    @Override
+    protected void onCancelled(Object o) {
+        super.onCancelled(o);
+        Log.d("ObjectDetectionTask", "TASK CANCELED");
     }
 
 

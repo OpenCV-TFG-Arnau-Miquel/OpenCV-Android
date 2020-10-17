@@ -4,6 +4,7 @@ import android.content.DialogInterface;
 import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorManager;
+import android.os.AsyncTask;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -46,9 +47,9 @@ import static android.Manifest.permission.WRITE_EXTERNAL_STORAGE;
 
 public class MainActivity extends AppCompatActivity implements CameraBridgeViewBase.CvCameraViewListener2 {
 
-    private int IMAGE_DIFF_THRESHOLD = 5;
-
+    public static final int REQUEST_ID_MULTIPLE_PERMISSIONS = 3;
     private static final String TAG = "MainActivity";
+    private static final int EQ = 10000;
     private CameraBridgeViewBase cameraBridgeViewBase;
     private Net net;
     private String yoloCfg;
@@ -57,11 +58,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private ArrayList<String> cocoNames;
     private boolean netInitialized = false;
     private ObjectDetectionTask objectDetectionTask;
-
     private SensorManager sensorManager;
     private Sensor accelerometer;
-
-    public static final int REQUEST_ID_MULTIPLE_PERMISSIONS = 3;
     private AccelerometerListener accelerometerListener;
     private boolean running = false;
     private Mat oldFrame;
@@ -69,6 +67,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private ArrayList<Detection> detectionsDone = new ArrayList<>();
 
     private int frameCounter = 0;
+    private long lastTaskTime = 0;
+    private boolean forcedNotEq = false;
+    private boolean forcedEq = false;
+    private boolean previousStateEquals = false;
 
 
     @Override
@@ -97,16 +99,14 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     @Override
     protected void onStart() {
         Log.d(TAG, "onStart");
-
         super.onStart();
-
-        requestAppPermissions();
     }
 
     @Override
     protected void onResume() {
         Log.d(TAG, "onResume");
         super.onResume();
+        requestAppPermissions();
         sensorManager.registerListener(accelerometerListener, accelerometer, SensorManager.SENSOR_DELAY_NORMAL);
 
 
@@ -120,6 +120,10 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         if (cameraBridgeViewBase != null) {
             cameraBridgeViewBase.disableView();
         }
+        if (objectDetectionTask != null && !objectDetectionTask.isCancelled() &&
+                !objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
+            objectDetectionTask.cancel(true);
+        }
         sensorManager.unregisterListener(accelerometerListener);
 
     }
@@ -127,18 +131,13 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     @Override
     protected void onStop() {
         Log.d(TAG, "onStop");
-
         super.onStop();
     }
 
     @Override
     protected void onDestroy() {
         Log.d(TAG, "onDestroy");
-
         super.onDestroy();
-        if (cameraBridgeViewBase != null) {
-            cameraBridgeViewBase.disableView();
-        }
 
     }
 
@@ -155,27 +154,60 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
 
             boolean areSimilarFrames = false;
             if (newFrame != null && !oldFrame.empty()) {
-                //TODO: light control
                 areSimilarFrames = compareFrames(oldFrame, greyNewFrame);
-                Log.d(TAG, "ARE SIMILAR = " + areSimilarFrames);
             }
 
+            Log.d(TAG, "ARE SIMILAR =                    " + areSimilarFrames);
+
             greyNewFrame.copyTo(oldFrame);
+
+            if (objectDetectionTask != null &&
+                    (objectDetectionTask.isCancelled() || objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED))) {
+                forcedNotEq = false;
+                forcedEq = false;
+            }
 
 
             if (netInitialized && !accelerometerListener.isHighMovement()) {
 
                 if (!areSimilarFrames) {
-                    newTask(newFrame);
+                    if (previousStateEquals) {
+                        newTask(newFrame);  // we stop other detections from equality loop to start a new one.
+                        detectionsDone.clear(); // this frame is different from the previous ones so we delete their detections
+                        forcedEq = false;
+                        forcedNotEq = true; // this detection must finish.
+                        lastTaskTime = System.currentTimeMillis();
+                    }
+                    // start detections for supposed changing loop (image constantly changing)
+                    if (!forcedNotEq) { // wait til the forced detection is done
+                        newTask(newFrame);  // we stop other detections to start a new one.
+                        forcedNotEq = true; // this detection must finish.
+                        lastTaskTime = System.currentTimeMillis();
+                        // this will work as sequential detection for an image constantly changing.
+                        // Putting time on this can make the detection to be done in a more wide lapse of time
+                        // and loose more different frames
+                    }
 
                 } else {
-                    if (!mustDetect()) {
-                        if (detectionsDone.isEmpty() && !running) {
-                            initTask(newFrame);
+                    if (!previousStateEquals) {
+                        newTask(newFrame);  // we stop other detections from difference loop to start a new one.
+                        detectionsDone.clear(); // this frame is equal from the previous one, but detection can come from much later frames
+                        forcedNotEq = false;
+                        forcedEq = true; // this first detection for a supposed loop of equal frames must finish.
+                        lastTaskTime = System.currentTimeMillis();
+                    } else { // we are in a loop of equal frames
+                        if (mustDetect()) { // every 10 sec recalculate
+                            newTask(newFrame);  // we stop other detections to start a new one.
+                            lastTaskTime = System.currentTimeMillis();
+                        } else {    // it does not need recalculation yet
+                            if (detectionsDone.isEmpty()) { // can be an error
+                                if (!forcedEq) {    // if no previous forced detection is working
+                                    newTask(newFrame); // we stop other detections to start a new one.
+                                    forcedEq = true;    // this is a forced detection - must finish.
+                                    lastTaskTime = System.currentTimeMillis();
+                                }
+                            }
                         }
-                    } else {
-                        Log.d(TAG, "MUST DETECT");
-                        newTask(newFrame);
                     }
                 }
 
@@ -183,9 +215,9 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
             } else if (accelerometerListener.isHighMovement()) {
                 synchronized (this) {
                     detectionsDone.clear();
-                    if (running) {
+                    if (objectDetectionTask != null && !objectDetectionTask.isCancelled() &&
+                            !objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
                         objectDetectionTask.cancel(true);
-                        running = false;
                     }
                 }
             }
@@ -194,45 +226,49 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 drawDetections(newFrame);
             }
 
+            previousStateEquals = areSimilarFrames;
+
         } else {
             frameCounter++;
         }
-
         return newFrame;
     }
 
     private void newTask(Mat newFrame) {
-        if (running)
+        boolean canceled = false;
+        if (objectDetectionTask != null && !objectDetectionTask.isCancelled() && !objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
+            Log.d(TAG, "CANCEL TASK");
+            canceled = true;
             objectDetectionTask.cancel(true);
-
+        }
+        if (!canceled) Log.d(TAG, "NOT CANCEL TASK");
         initTask(newFrame);
     }
 
     private void initTask(Mat newFrame) {
         objectDetectionTask = new ObjectDetectionTask(net, this);
+        Log.d(TAG, "NEW TASK");
         objectDetectionTask.execute(newFrame);
-        running = true;
     }
 
     private boolean mustDetect() {
-        //TODO
-        return true;
-    }
-
-    private boolean compareFrames(Mat oldFrame, Mat newFrame) {
-        Mat difference = new Mat();
-        Core.compare(oldFrame, newFrame, difference, Core.CMP_EQ);
-        int count = Core.countNonZero(difference);
-        if (count >= 15000) {
+        long currentTime = System.currentTimeMillis();
+        if (currentTime - lastTaskTime >= EQ) {
+            Log.d(TAG, "Must detect");
             return true;
         }
         return false;
     }
 
-    // TODO: add method to retrieve from Task detected boxes in oldFrame and added it to current frame.
+
+    private boolean compareFrames(Mat oldFrame, Mat newFrame) {
+        Mat difference = new Mat();
+        Core.compare(oldFrame, newFrame, difference, Core.CMP_EQ);
+        int count = Core.countNonZero(difference);
+        return count >= 15000;
+    }
 
     private void formatFrame(Mat frame) {
-        Core.rotate(frame, frame, 360);
         Core.flip(frame, frame, 0);
         Core.flip(frame, frame, 1);
     }
@@ -354,7 +390,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                     finish();
                 }
             }
-            Log.d(TAG, "STARTED FROM CREATE - FIRST TIME");
         }
 
     }
@@ -367,7 +402,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         StorageReference namesRef = this.mStorageRef.child("coco.names");
 
         File localFile;
-        //localFile = File.createTempFile("coco_", ".names");
         localFile = new File(getApplicationInfo().dataDir + File.separator + "coco.names");
 
         File finalLocalFile = localFile;
@@ -391,7 +425,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         StorageReference namesRef = this.mStorageRef.child("yolov3.cfg");
 
         File localFile;
-        //localFile = File.createTempFile("yolov3_", ".cfg");
         localFile = new File(getApplicationInfo().dataDir + File.separator + "yolov3.cfg");
 
         File finalLocalFile = localFile;
@@ -408,7 +441,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         StorageReference namesRef = this.mStorageRef.child("yolov3.weights");
 
         File localFile;
-        //localFile = File.createTempFile("yolov3_", ".weights");
         localFile = new File(getApplicationInfo().dataDir + File.separator + "yolov3.weights");
 
         File finalLocalFile = localFile;

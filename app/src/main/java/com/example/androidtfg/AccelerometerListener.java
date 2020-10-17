@@ -3,7 +3,6 @@ package com.example.androidtfg;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
-import android.util.Log;
 
 class AccelerometerListener implements SensorEventListener {
 

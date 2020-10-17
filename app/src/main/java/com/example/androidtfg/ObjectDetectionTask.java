@@ -62,7 +62,7 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
         // Generate a 4-dimensional Binary Object from image, after mean subtraction, normalizing, and channel swapping.
         // 4-dimensions: num_images, num_channels (colors), width, height.
-        Mat imageBlob = Dnn.blobFromImage(frame, 0.00392, new Size(416, 416), new Scalar(0, 0, 0),/*swapRB*/false, /*crop*/false);
+        Mat imageBlob = Dnn.blobFromImage(frame, 0.00392, new Size(416, 416), new Scalar(0, 0, 0),false,false);
 
         // Pass the binary image to the network
         net.setInput(imageBlob);

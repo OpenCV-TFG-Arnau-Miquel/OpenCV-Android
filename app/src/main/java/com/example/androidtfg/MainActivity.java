@@ -157,8 +157,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
                 areSimilarFrames = compareFrames(oldFrame, greyNewFrame);
             }
 
-            Log.d(TAG, "ARE SIMILAR =                    " + areSimilarFrames);
-
             greyNewFrame.copyTo(oldFrame);
 
             if (objectDetectionTask != null &&
@@ -235,26 +233,20 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     }
 
     private void newTask(Mat newFrame) {
-        boolean canceled = false;
         if (objectDetectionTask != null && !objectDetectionTask.isCancelled() && !objectDetectionTask.getStatus().equals(AsyncTask.Status.FINISHED)) {
-            Log.d(TAG, "CANCEL TASK");
-            canceled = true;
             objectDetectionTask.cancel(true);
         }
-        if (!canceled) Log.d(TAG, "NOT CANCEL TASK");
         initTask(newFrame);
     }
 
     private void initTask(Mat newFrame) {
         objectDetectionTask = new ObjectDetectionTask(net, this);
-        Log.d(TAG, "NEW TASK");
         objectDetectionTask.execute(newFrame);
     }
 
     private boolean mustDetect() {
         long currentTime = System.currentTimeMillis();
         if (currentTime - lastTaskTime >= EQ) {
-            Log.d(TAG, "Must detect");
             return true;
         }
         return false;

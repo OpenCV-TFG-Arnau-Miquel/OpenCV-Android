@@ -1,7 +1,6 @@
 package com.example.androidtfg;
 
 import android.os.AsyncTask;
-import android.util.Log;
 
 import org.opencv.core.Core;
 import org.opencv.core.Mat;
@@ -35,8 +34,6 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
 
     @Override
     protected Object doInBackground(Mat... frames) {
-        Log.d("ObjectDetectionTask", "TASK EXECUTED IN BACKGROUND");
-
         Mat frame = frames[0];
 
         // Get all the bounding boxes from the network
@@ -49,8 +46,6 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
         processDetections(frame, result, clsIds, confs, boxes);
 
         filterDetections(clsIds, confs, boxes);
-
-        Log.d("ObjectDetectionTask", "I'VE FINISHED");
 
         return  null;
     }
@@ -180,7 +175,6 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
     @Override
     protected void onCancelled(Object o) {
         super.onCancelled(o);
-        Log.d("ObjectDetectionTask", "TASK CANCELED");
     }
 
 

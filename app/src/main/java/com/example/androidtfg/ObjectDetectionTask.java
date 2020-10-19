@@ -90,9 +90,9 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
             // See all detections for each layer
             for (int j = 0; j < level.rows(); ++j) {
 
-                Mat row = level.row(j); // row in a level is a detection
+                Mat detection = level.row(j); // row in a level is a detection
 
-                Mat scores = row.colRange(5, level.cols()); // information about class predictions
+                Mat scores = detection.colRange(5, level.cols()); // information about class predictions
                 Core.MinMaxLocResult mm = Core.minMaxLoc(scores); // Get values and locations of possible classes
                 float confidence = (float) mm.maxVal; // max probability of class
                 Point classIdPoint = mm.maxLoc; // position of the class in the set
@@ -103,10 +103,10 @@ class ObjectDetectionTask extends AsyncTask<Mat, Object, Object> {
                     // center of the box
                     // width and height
                     // values are divisors (0.5, 0.65...)
-                    int centerX = (int) (row.get(0, 0)[0] * frame.cols());
-                    int centerY = (int) (row.get(0, 1)[0] * frame.rows());
-                    int width = (int) (row.get(0, 2)[0] * frame.cols());
-                    int height = (int) (row.get(0, 3)[0] * frame.rows());
+                    int centerX = (int) (detection.get(0, 0)[0] * frame.cols());
+                    int centerY = (int) (detection.get(0, 1)[0] * frame.rows());
+                    int width = (int) (detection.get(0, 2)[0] * frame.cols());
+                    int height = (int) (detection.get(0, 3)[0] * frame.rows());
 
                     // get start points of the bounding box in the frame
                     int left = centerX - width / 2;

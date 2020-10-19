@@ -61,7 +61,6 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
     private SensorManager sensorManager;
     private Sensor accelerometer;
     private AccelerometerListener accelerometerListener;
-    private boolean running = false;
     private Mat oldFrame;
 
     private ArrayList<Detection> detectionsDone = new ArrayList<>();
@@ -153,7 +152,8 @@ public class MainActivity extends AppCompatActivity implements CameraBridgeViewB
         if (frameCounter > 30) {
 
             boolean areSimilarFrames = false;
-            if (newFrame != null && !oldFrame.empty()) {
+            if (!oldFrame.empty()) {
+
                 areSimilarFrames = compareFrames(oldFrame, greyNewFrame);
             }
 
